@@ -2,11 +2,16 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
+      "src": "server.ts",
       "use": "@vercel/node",
       "config": {
-        "maxLambdaSize": "50mb"
+        "includeFiles": ["dist/**"]
       }
     }
+  ],
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/api/(.*)", "dest": "/server.ts" },
+    { "src": "/(.*)", "dest": "/server.ts" }
   ]
 }
