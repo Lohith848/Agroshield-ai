@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import axios from "axios";
 import dotenv from "dotenv";
 import { Anthropic } from "@anthropic-ai/sdk";
@@ -288,9 +287,10 @@ Always include:
 
 // Vite middleware for development
 if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-  (async () => {
-    try {
-      const vite = await createViteServer({
+(async () => {
+     try {
+       const { createServer: createViteServer } = await import("vite");
+       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
       });
