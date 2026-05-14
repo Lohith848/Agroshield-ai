@@ -23,7 +23,7 @@ export default function Scanner() {
     }
   };
 
-  const analyzeImage = async () => {
+  const analyze = async () => {
     if (!image) return;
 
     setLoading(true);
@@ -31,59 +31,9 @@ export default function Scanner() {
     setError(null);
 
     try {
-      // 1. Try Plant.id API via our proxy
-      const response = await axios.post("/api/scan", {
-        image: image,
-      }, { timeout: 30000 }); // 30s for image upload + analysis
-
-      const data = response.data;
-
-      if (data.result?.is_plant?.probability > 0.6) {
-        const isHealthy = data.result.is_healthy?.probability > 0.7;
-        const healthDetermination = data.result.disease_determination;
-        const suggestions = healthDetermination?.suggestions || [];
-
-        let report = `Status: ${isHealthy ? "Healthy" : "Infected"}\n\n`;
-        report += `Common Name: ${data.result.classification?.suggestions?.[0]?.name || "Unknown Plant"}\n\n`;
-
-        if (suggestions.length > 0) {
-          report += `Top Detection: ${suggestions[0].name} (${Math.round(suggestions[0].probability * 100)}% confidence)\n\n`;
-
-          if (suggestions[0].details?.description) {
-            report += `Description: ${suggestions[0].details.description}\n\n`;
-          }
-
-          if (suggestions[0].details?.treatment) {
-            const treatment = suggestions[0].details.treatment;
-            report += `Treatment:\n`;
-            if (treatment.biological) report += `• Biological: ${treatment.biological.join(", ")}\n`;
-            if (treatment.chemical) report += `• Chemical: ${treatment.chemical.join(", ")}\n`;
-            if (treatment.prevention) report += `• Prevention: ${treatment.prevention.join(", ")}\n`;
-          }
-        }
-
-        setResult(report);
-      } else {
-        // Fallback to Claude if it's not detected as a plant by Plant.id
-        await analyzeWithClaude();
-      }
-    } catch (err: any) {
-      if (err.response?.status === 401) {
-        setError(err.response.data.setupInstructions || "PlantID API key missing. Check configuration.");
-      } else {
-        // Try Claude as total fallback
-        await analyzeWithClaude();
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const analyzeWithClaude = async () => {
-    try {
       const response = await axios.post("/api/claude-analyze", {
         image: image,
-      }, { timeout: 30000 });
+      }, { timeout: 25000 });
 
       const data = response.data;
       if (data.result) {
@@ -93,12 +43,14 @@ export default function Scanner() {
       }
     } catch (err: any) {
       if (err.response?.status === 401) {
-        setError(err.response.data.setupInstructions || "API key missing. Check configuration.");
+        setError(err.response.data.setupInstructions || "Anthropic API key missing. Check configuration.");
       } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError("Request timed out. Please check your connection and try again.");
+        setError("Request timed out. Please try again with a smaller image.");
       } else {
         setError("Analysis failed. Please try again with a clearer image.");
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -168,7 +120,7 @@ export default function Scanner() {
         {!result && image && (
           <button
             disabled={loading}
-            onClick={analyzeImage}
+            onClick={analyze}
             className="w-full h-14 bg-green-600 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50"
           >
             {loading ? <RefreshCw className="animate-spin" /> : <CheckCircle2 />}
