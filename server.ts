@@ -42,13 +42,13 @@ async function startServer() {
          return res.status(400).json({ error: "Coordinates required" });
        }
 
-       const response = await axios.get(
-         `https://api.openweathermap.org/data/2.5/weather`,
-         {
-           params: { lat, lon, appid: apiKey, units: "metric" },
-           timeout: 8000
-         }
-       );
+        const response = await axios.get(
+          `https://api.openweathermap.org/data/2.5/weather`,
+          {
+            params: { lat, lon, appid: apiKey, units: "metric" },
+            timeout: 9500
+          }
+        );
        res.json(response.data);
      } catch (error: any) {
        console.error("Weather API Error:", error.message);
@@ -70,19 +70,19 @@ async function startServer() {
          });
        }
 
-       const response = await axios.get(
-         "https://newsapi.org/v2/everything",
-         {
-           params: {
-             q: "agriculture+farming+india",
-             sortBy: "publishedAt",
-             language: "en",
-             apiKey: apiKey,
-             pageSize: 10
-           },
-           timeout: 8000
-         }
-       );
+        const response = await axios.get(
+          "https://newsapi.org/v2/everything",
+          {
+            params: {
+              q: "agriculture+farming+india",
+              sortBy: "publishedAt",
+              language: "en",
+              apiKey: apiKey,
+              pageSize: 10
+            },
+            timeout: 9500
+          }
+        );
        res.json(response.data);
      } catch (error: any) {
        console.error("News API Error:", error.message);
@@ -104,21 +104,21 @@ async function startServer() {
          });
        }
 
-       const response = await axios.get(
-         "https://api.data.gov.in/resource/9ef273e5-bf72-4aff-b5a8-20673033605b",
-         {
-           params: {
-             "api-key": apiKey,
-             format: "json",
-             limit: 10
-           },
-           timeout: 8000,
-           headers: {
-             "Accept": "application/json",
-             "User-Agent": "AgroShieldApp/2.0"
-           }
-         }
-       );
+        const response = await axios.get(
+          "https://api.data.gov.in/resource/9ef273e5-bf72-4aff-b5a8-20673033605b",
+          {
+            params: {
+              "api-key": apiKey,
+              format: "json",
+              limit: 10
+            },
+            timeout: 9500,
+            headers: {
+              "Accept": "application/json",
+              "User-Agent": "AgroShieldApp/2.0"
+            }
+          }
+        );
 
        const data = response.data;
 
