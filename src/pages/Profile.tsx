@@ -3,19 +3,35 @@ import { supabase } from "@/lib/supabase";
 import { User, LogOut, Settings, Bell, Shield, Heart } from "lucide-react";
 import { motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Profile() {
-  const [user, setUser] = useState<any>(null);
+  const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
-  }, []);
+    // Redirect to login if not authenticated
+    if (!loading && !user) {
+      navigate("/login", { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/login");
+    await signOut();
+    navigate("/login", { replace: true });
   };
+
+  if (loading) {
+    return (
+      <div className="px-6 pt-12 pb-12 flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Redirecting
+  }
 
   return (
     <div className="px-6 pt-12 pb-12">
@@ -23,7 +39,7 @@ export default function Profile() {
         <div className="w-24 h-24 rounded-[2rem] bg-green-100 flex items-center justify-center mb-4 text-green-600 shadow-inner">
           <User size={48} />
         </div>
-        <h2 className="text-xl font-bold text-gray-900">{user?.email || "Farmer"}</h2>
+        <h2 className="text-xl font-bold text-gray-900">{user.email || "Farmer"}</h2>
         <p className="text-gray-400 text-xs mt-1 uppercase tracking-widest font-bold">Verified Professional</p>
       </div>
 
@@ -34,7 +50,7 @@ export default function Profile() {
           { icon: Heart, label: "My Crops", color: "text-rose-500" },
           { icon: Settings, label: "App Settings", color: "text-gray-500" },
         ].map((item, idx) => (
-          <button 
+          <button
             key={idx}
             className="w-full p-4 bg-white border border-gray-100 rounded-2xl flex items-center justify-between group active:scale-98 transition-all"
           >
@@ -50,7 +66,7 @@ export default function Profile() {
           </button>
         ))}
 
-        <button 
+        <button
           onClick={handleLogout}
           className="w-full mt-6 p-4 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center gap-2 font-bold active:scale-95 transition-all"
         >

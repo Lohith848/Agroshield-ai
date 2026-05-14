@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { BarChart3, TrendingUp, TrendingDown, MapPin, Search, ArrowRight, Filter } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { BarChart3, TrendingUp, TrendingDown, MapPin, Search, ArrowRight, Filter, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import axios from "axios";
 import { type MarketPrice } from "@/types";
@@ -10,26 +10,43 @@ export default function Market() {
   const [error, setError] = useState<string | null>(null);
   const [setupInfo, setSetupInfo] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchPrices = async () => {
-      setLoading(true);
-      setError(null);
-      setSetupInfo(null);
-      try {
-        const response = await axios.get("/api/prices", { timeout: 10000 });
-        setPrices(response.data.records || []);
-      } catch (err: any) {
-        if (err.response?.status === 401) {
-          setSetupInfo(err.response.data.setupInstructions);
-        } else {
-          setError("Failed to load market data. Please try again.");
-        }
-      } finally {
+  const fetchPrices = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setSetupInfo(null);
+    try {
+      const response = await axios.get("/api/prices", { timeout: 7000 });
+      const data = response.data;
+
+      // Validate response structure
+      if (!data || !data.records || !Array.isArray(data.records)) {
+        console.error("Market API: Invalid response structure", data);
+        setError("Unable to load market data. Please try again later.");
         setLoading(false);
+        return;
       }
-    };
-    fetchPrices();
+
+      setPrices(data.records || []);
+
+      // Log fallback status for debugging
+      if (data.isFallback) {
+        console.log("Market API: Using fallback data -", data.message);
+      }
+    } catch (err: any) {
+      console.error("Market fetch error:", err);
+      if (err.response?.status === 401) {
+        setSetupInfo(err.response.data.setupInstructions);
+      } else {
+        setError("Failed to load market data. Please check your connection.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchPrices();
+  }, [fetchPrices]);
 
   return (
     <div className="px-6 pt-8 pb-12">
@@ -58,7 +75,14 @@ export default function Market() {
         </div>
       ) : error ? (
         <div className="p-8 text-center bg-red-50 rounded-3xl border border-red-100">
-          <p className="text-red-800 text-sm">{error}</p>
+          <p className="text-red-800 text-sm mb-4">{error}</p>
+          <button
+            onClick={fetchPrices}
+            className="px-4 py-2 bg-red-100 text-red-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 mx-auto"
+          >
+            <RefreshCw size={12} />
+            Try Again
+          </button>
         </div>
       ) : (
         <div className="space-y-4">

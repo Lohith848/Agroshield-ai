@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { CloudSun, Droplets, Wind, Thermometer, MapPin, Search, AlertTriangle } from "lucide-react";
 import { motion } from "motion/react";
 import axios from "axios";
@@ -8,35 +8,69 @@ export default function Weather() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [locationName, setLocationName] = useState("Detecting location...");
 
-   const fetchWeather = async (lat?: number, lon?: number) => {
-     setLoading(true);
-     setError(null);
-     try {
-       // Default to Delhi if no coordinates
-       const response = await axios.get(`/api/weather`, {
-         params: { lat: lat || 28.6139, lon: lon || 77.2090 },
-         timeout: 10000
-       });
-       setWeather(response.data);
-     } catch (err: any) {
-       console.error("Weather fetch error:", err);
-       setError(err.response?.data?.error || "Could not fetch weather. Check your connection.");
-     } finally {
-       setLoading(false);
-     }
-   };
+  const fetchWeather = useCallback(async (lat?: number, lon?: number) => {
+    setLoading(true);
+    setError(null);
 
-  useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather() // Fallback to default
-      );
-    } else {
-      fetchWeather();
+    try {
+      // Use provided coordinates or default to Delhi
+      const latitude = lat || 28.6139;
+      const longitude = lon || 77.2090;
+
+      const response = await axios.get(`/api/weather`, {
+        params: { lat: latitude, lon: longitude },
+        timeout: 6000
+      });
+
+      if (!response.data) {
+        throw new Error("No weather data received");
+      }
+
+      setWeather(response.data);
+      setLocationName(response.data.name ? `${response.data.name}, India` : "Your Location");
+    } catch (err: any) {
+      console.error("Weather fetch error:", err);
+      const errorMsg = err.response?.data?.error || "Could not fetch weather. Check your connection.";
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    // Check if geolocation is available and not being blocked
+    if (!navigator.geolocation) {
+      fetchWeather();
+      return;
+    }
+
+    // Set a timeout to prevent getting stuck
+    const timeoutId = setTimeout(() => {
+      fetchWeather(); // Fallback to default location
+    }, 5000);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timeoutId);
+        fetchWeather(pos.coords.latitude, pos.coords.longitude);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        console.log("Geolocation error or denied:", error.message);
+        fetchWeather(); // Fallback to default location
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 5000,
+        maximumAge: 60000 // Cache for 1 minute
+      }
+    );
+
+    // Cleanup timeout on unmount
+    return () => clearTimeout(timeoutId);
+  }, [fetchWeather]);
 
   return (
     <div className="px-6 pt-8 pb-12">
@@ -45,7 +79,7 @@ export default function Weather() {
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Weather</h1>
           <p className="text-gray-500 text-sm flex items-center gap-1">
             <MapPin size={14} className="text-green-600" />
-            {weather ? `${weather.name}, India` : "Detecting location..."}
+            {locationName}
           </p>
         </div>
         <button className="p-2 rounded-xl bg-white border border-gray-100 shadow-sm text-gray-400">

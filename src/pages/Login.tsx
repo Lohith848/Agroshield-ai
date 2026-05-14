@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence } from "motion/react";
 import { Mail, ArrowRight, ShieldCheck, RefreshCw, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -10,25 +12,39 @@ export default function Login() {
   const [sent, setSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate("/", { replace: true });
+    }
+  }, [user, authLoading, navigate]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setSent(true);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: window.location.origin + "/auth/callback",
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+      } else {
+        setSent(true);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to send OTP. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -36,17 +52,39 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: otp,
-      type: "email",
-    });
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: otp,
+        type: "email",
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+      } else {
+        // Successful login - redirect to home
+        navigate("/", { replace: true });
+      }
+    } catch (err: any) {
+      setError(err.message || "Verification failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  // Show loading while checking auth status
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Don't render if already logged in (will redirect)
+  if (user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-white px-6 flex flex-col justify-center pb-20">
@@ -63,7 +101,7 @@ export default function Login() {
       <div className="max-w-xs mx-auto w-full">
         <AnimatePresence mode="wait">
           {!sent ? (
-            <motion.form 
+            <motion.form
               key="email-form"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -73,8 +111,8 @@ export default function Login() {
             >
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   placeholder="Enter your email"
                   required
                   value={email}
@@ -82,7 +120,7 @@ export default function Login() {
                   className="w-full h-14 pl-12 pr-4 bg-gray-50 border border-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all"
                 />
               </div>
-              <button 
+              <button
                 disabled={loading}
                 className="w-full h-14 bg-green-600 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50"
               >
@@ -91,7 +129,7 @@ export default function Login() {
               </button>
             </motion.form>
           ) : (
-            <motion.form 
+            <motion.form
               key="otp-form"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -104,11 +142,11 @@ export default function Login() {
                   We've sent a 6-digit code to <br/><span className="font-bold">{email}</span>
                 </p>
               </div>
-              
+
               <div className="relative">
                 <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="000000"
                   required
                   maxLength={6}
@@ -118,7 +156,7 @@ export default function Login() {
                 />
               </div>
 
-              <button 
+              <button
                 disabled={loading || otp.length !== 6}
                 className="w-full h-14 bg-green-600 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-600/20 active:scale-95 transition-all disabled:opacity-50"
               >
@@ -126,7 +164,7 @@ export default function Login() {
               </button>
 
               <div className="flex flex-col gap-3 pt-2">
-                <button 
+                <button
                   type="button"
                   disabled={loading}
                   onClick={handleSendOtp}
@@ -134,9 +172,9 @@ export default function Login() {
                 >
                   Resend Code
                 </button>
-                <button 
+                <button
                   type="button"
-                  onClick={() => { setSent(false); setOtp(""); }}
+                  onClick={() => { setSent(false); setOtp(""); setError(null); }}
                   className="text-xs text-gray-400 hover:text-gray-600 underline"
                 >
                   Change Email
@@ -147,7 +185,7 @@ export default function Login() {
         </AnimatePresence>
 
         {error && (
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="mt-4 text-center text-xs font-bold text-red-500 bg-red-50 py-2 rounded-lg"

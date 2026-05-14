@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Newspaper, ExternalLink, Calendar, Share2, Bookmark, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Newspaper, ExternalLink, Calendar, Share2, Bookmark, AlertTriangle, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import axios from "axios";
 import { type NewsArticle } from "@/types";
@@ -11,27 +11,38 @@ export default function News() {
   const [error, setError] = useState<string | null>(null);
   const [setupInfo, setSetupInfo] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchNews = async () => {
-      setLoading(true);
-      setError(null);
-      setSetupInfo(null);
-      try {
-        const response = await axios.get("/api/news", { timeout: 10000 });
-        setNews(response.data.articles || []);
-      } catch (err: any) {
-        console.error("News fetch error:", err);
-        if (err.response?.status === 401) {
-          setSetupInfo(err.response.data.setupInstructions);
-        } else {
-          setError(err.response?.data?.error || "Failed to load news. Please try again.");
-        }
-      } finally {
+  const fetchNews = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setSetupInfo(null);
+    try {
+      const response = await axios.get("/api/news", { timeout: 6000 });
+      const data = response.data;
+
+      // NewsAPI returns { status, totalResults, articles }
+      if (!data || !data.articles || !Array.isArray(data.articles)) {
+        console.error("News API: Invalid response structure", data);
+        setError("Unable to load news. Please try again later.");
         setLoading(false);
+        return;
       }
-    };
-    fetchNews();
+
+      setNews(data.articles || []);
+    } catch (err: any) {
+      console.error("News fetch error:", err);
+      if (err.response?.status === 401) {
+        setSetupInfo(err.response.data.setupInstructions);
+      } else {
+        setError(err.response?.data?.error || "Failed to load news. Please check your connection.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchNews();
+  }, [fetchNews]);
 
   return (
     <div className="px-6 pt-8 pb-12">
@@ -56,17 +67,18 @@ export default function News() {
            <h3 className="font-bold text-gray-900 mb-2">Setup News</h3>
            <p className="text-gray-500 text-sm mb-4 leading-relaxed">{setupInfo}</p>
          </div>
-       ) : error ? (
-         <div className="p-6 bg-red-50 border border-red-100 rounded-3xl text-center">
-           <AlertTriangle className="mx-auto text-red-500 mb-3" size={32} />
-           <p className="text-red-800 text-sm">{error}</p>
-           <button
-             onClick={() => window.location.reload()}
-             className="mt-4 px-4 py-2 bg-white border border-red-200 text-red-800 rounded-xl text-xs font-semibold"
-           >
-             Retry
-           </button>
-         </div>
+        ) : error ? (
+          <div className="p-6 bg-red-50 border border-red-100 rounded-3xl text-center">
+            <AlertTriangle className="mx-auto text-red-500 mb-3" size={32} />
+            <p className="text-red-800 text-sm">{error}</p>
+            <button
+              onClick={fetchNews}
+              className="mt-4 px-4 py-2 bg-white border border-red-200 text-red-800 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 mx-auto"
+            >
+              <RefreshCw size={12} />
+              Try Again
+            </button>
+          </div>
        ) : (
         <div className="space-y-8">
           {news.map((item, idx) => (

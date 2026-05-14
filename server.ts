@@ -8,6 +8,30 @@ import cors from "cors";
 
 dotenv.config();
 
+// Startup validation for critical environment variables
+// Note: Vite client-side env vars (VITE_*) are injected via Vite config
+// Server-side uses raw env vars (without VITE_ prefix if set directly in Vercel)
+const requiredEnvVars = {
+  GOVT_AGRI_API_KEY: process.env.GOVT_AGRI_API_KEY,
+  OPENWEATHER_API_KEY: process.env.OPENWEATHER_API_KEY,
+  NEWS_API_KEY: process.env.NEWS_API_KEY,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  // Vite client-side variables - note: in production these are injected into client bundle
+  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
+  VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY,
+};
+
+const missingEnvVars = Object.entries(requiredEnvVars)
+  .filter(([_, value]) => !value)
+  .map(([key]) => key);
+
+if (missingEnvVars.length > 0) {
+  console.warn(`[Startup] Missing environment variables: ${missingEnvVars.join(", ")}`);
+  console.warn("[Startup] Some features may be degraded until all required keys are set.");
+} else {
+  console.log("[Startup] All required environment variables loaded successfully.");
+}
+
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
@@ -16,13 +40,23 @@ async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000", 10);
 
+  // Production trust proxy for proper client IP detection
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+  }
+
   // CORS: Allow all origins for mobile app access
+  // Must be before all routes
   app.use(cors({
     origin: true,
     credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization", "Origin"],
+    maxAge: 86400 // 24 hours cache for preflight
   }));
+
+  // Handle OPTIONS requests (preflight)
+  app.options("*", cors());
 
   app.use(express.json({ limit: '10mb' }));
 
@@ -46,7 +80,7 @@ async function startServer() {
           `https://api.openweathermap.org/data/2.5/weather`,
           {
             params: { lat, lon, appid: apiKey, units: "metric" },
-            timeout: 9500
+            timeout: 6000
           }
         );
        res.json(response.data);
@@ -80,7 +114,7 @@ async function startServer() {
               apiKey: apiKey,
               pageSize: 10
             },
-            timeout: 9500
+            timeout: 6000
           }
         );
        res.json(response.data);
@@ -93,16 +127,16 @@ async function startServer() {
      }
    });
 
-   // 3. Market Prices Proxy (Data.gov.in)
-   app.get("/api/prices", async (req, res) => {
-     try {
-       const apiKey = process.env.GOVT_AGRI_API_KEY;
-       if (!apiKey) {
-         return res.status(401).json({
-           error: "Govt Agri API key missing",
-           setupInstructions: "Please set GOVT_AGRI_API_KEY in environment variables."
-         });
-       }
+    // 3. Market Prices Proxy (Data.gov.in)
+    app.get("/api/prices", async (req, res) => {
+      try {
+        const apiKey = process.env.GOVT_AGRI_API_KEY;
+        if (!apiKey) {
+          return res.status(500).json({
+            error: "Market API not configured",
+            setupInstructions: "GOVT_AGRI_API_KEY missing in environment."
+          });
+        }
 
         const response = await axios.get(
           "https://api.data.gov.in/resource/9ef273e5-bf72-4aff-b5a8-20673033605b",
@@ -112,7 +146,7 @@ async function startServer() {
               format: "json",
               limit: 10
             },
-            timeout: 9500,
+            timeout: 7000,
             headers: {
               "Accept": "application/json",
               "User-Agent": "AgroShieldApp/2.0"
@@ -120,45 +154,53 @@ async function startServer() {
           }
         );
 
-       const data = response.data;
+        const data = response.data;
 
-       // Normalize response
-       const rawRecords = Array.isArray(data?.records) ? data.records : [];
+        // Validate API response
+        if (!data || typeof data !== 'object') {
+          throw new Error("Invalid API response format");
+        }
 
-       const records = rawRecords.map((item: any) => ({
-         commodity: item.commodity || "Unknown Commodity",
-         market: item.market || "Unknown Market",
-         district: item.district || "Unknown District",
-         state: item.state || "Unknown State",
-         modal_price: String(item.modal_price || item.modalRate || item.modal_rate || "0"),
-         arrival_date: item.arrival_date || item.arrivalDate || item.date || "N/A",
-         variety: item.variety || "Common",
-         min_price: String(item.min_price || item.minPrice || item.min_rate || "0"),
-         max_price: String(item.max_price || item.maxPrice || item.max_rate || "0"),
-       }));
+        // Data.gov.in returns { count, records } - map to our MarketPrice interface
+        const rawRecords = Array.isArray(data?.records) ? data.records : [];
 
-       if (records.length === 0) {
-         throw new Error("No records available");
-       }
+        const records = rawRecords.map((item: any) => ({
+          commodity: item.commodity || "Unknown Commodity",
+          market: item.market || "Unknown Market",
+          district: item.district || "Unknown District",
+          state: item.state || "Unknown State",
+          modal_price: String(item.modal_price || item.modalRate || item.modal_rate || "0"),
+          arrival_date: item.arrival_date || item.arrivalDate || item.date || "N/A",
+          variety: item.variety || "Common",
+          min_price: String(item.min_price || item.minPrice || item.min_rate || "0"),
+          max_price: String(item.max_price || item.maxPrice || item.max_rate || "0"),
+        }));
 
-       res.json({ records, isFallback: false });
-     } catch (error: any) {
-       console.error("Market API Error:", error.message);
+        // If API returned no records, trigger fallback
+        if (records.length === 0) {
+          console.log("[Market API] No records from API, using fallback data");
+          throw new Error("No records available from API");
+        }
 
-       const fallbackRecords = [
-         { commodity: "Tomato", market: "Azadpur", district: "Delhi", state: "Delhi", modal_price: "2400", arrival_date: "13/05/2026", variety: "Hybrid", min_price: "2000", max_price: "2800" },
-         { commodity: "Potato", market: "Kolkata", district: "Kolkata", state: "West Bengal", modal_price: "1200", arrival_date: "13/05/2026", variety: "Desi", min_price: "1000", max_price: "1400" },
-         { commodity: "Onion", market: "Lasalgaon", district: "Nashik", state: "Maharashtra", modal_price: "1850", arrival_date: "13/05/2026", variety: "Red", min_price: "1600", max_price: "2100" },
-         { commodity: "Wheat", market: "Khanna", district: "Ludhiana", state: "Punjab", modal_price: "2275", arrival_date: "13/05/2026", variety: "Lok-1", min_price: "2100", max_price: "2450" }
-       ];
+        res.json({ records, isFallback: false });
+      } catch (error: any) {
+        console.error("Market API Error:", error.message);
 
-       res.json({
-         records: fallbackRecords,
-         isFallback: true,
-         message: "Live server busy. Showing regional averages."
-       });
-     }
-   });
+        // Fallback Data for professional look when API is down/403/empty
+        const fallbackRecords = [
+          { commodity: "Tomato", market: "Azadpur", district: "Delhi", state: "Delhi", modal_price: "2400", arrival_date: new Date().toLocaleDateString('en-IN'), variety: "Hybrid", min_price: "2000", max_price: "2800" },
+          { commodity: "Potato", market: "Kolkata", district: "Kolkata", state: "West Bengal", modal_price: "1200", arrival_date: new Date().toLocaleDateString('en-IN'), variety: "Desi", min_price: "1000", max_price: "1400" },
+          { commodity: "Onion", market: "Lasalgaon", district: "Nashik", state: "Maharashtra", modal_price: "1850", arrival_date: new Date().toLocaleDateString('en-IN'), variety: "Red", min_price: "1600", max_price: "2100" },
+          { commodity: "Wheat", market: "Khanna", district: "Ludhiana", state: "Punjab", modal_price: "2275", arrival_date: new Date().toLocaleDateString('en-IN'), variety: "Lok-1", min_price: "2100", max_price: "2450" }
+        ];
+
+        res.json({
+          records: fallbackRecords,
+          isFallback: true,
+          message: "Live market data unavailable. Showing regional averages."
+        });
+      }
+    });
 
   // 5. Claude Vision Fallback Proxy
   app.post("/api/claude-analyze", async (req, res) => {
