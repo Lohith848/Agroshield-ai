@@ -1,15 +1,10 @@
 {
   "version": 2,
-  "builds": [
+  "outputDirectory": "dist",
+  "rewrites": [
     {
-      "src": "dist/server.cjs",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/server.cjs"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
